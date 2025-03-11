@@ -397,6 +397,182 @@ In the DynamoDB Item explorer, review the inserted data. You should now see 26 i
 
 <img width="959" alt="image" src="https://github.com/user-attachments/assets/dcb8ba5f-9179-40c8-94f0-0a8c132711d0" />
 
+<h2>Task 6: Querying the table by using the SDK</h2>
+
+Now that the data is loaded, Sofía needs a way to retrieve, or query, the product information from the DynamoDB table. 
+The SDK has two operations for retrieving data from a DynamoDB table: scan() and query().
+
+The scan operation reads all records in the table, and unwanted data can then be filtered out. If only a subset of the table data is needed, the query operation often provides better performance because it reads only a subset of the records in the table or index.
+The business owners want to show all the menu items on the café website, so Sofía decides to use the scan() operation to retrieve all records from the table. 
+In this task, you continue as Sofía to implement this feature.
+Note: Later in the application development process, you use this Python code in an AWS Lambda function. The Lambda function retrieves the table records so that the café website can display all the pastries.
+
+Edit the script that selects all records from the table: In AWS Cloud9 IDE, open python_3 > get_all_items.py. In the upper left, choose File > Save to save your changes. 
+
+<img width="959" alt="image" src="https://github.com/user-attachments/assets/72939cd5-260e-40ec-a860-796747a10180" />
+
+Review the get_all_items.py script to understand what it does:
+<ol>
+      <li>On line 15, the scan operation is defined in the response variable. </li>
+      <li>Notice the while loop that begins on line 18. </li>
+      <li>If the result of the scan operation is large, DynamoDB splits the results into 1 MB chunks of information (or the first 25 items if their total is less than 1 MB). These chunks of returned data are called pages.</li> 
+      <li>When the while loop runs, the code processes each page, which is also known as pagination. The loop then appends records to the end of the result set until all data has been received:</li>
+</ol>
+
+response = table.scan()
+ data = response['Items']
+ while response.get('LastEvaluatedKey'):
+    response = table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
+     data.extend(response['Items'])
+
+In the AWS Cloud9 terminal, run the script: 
+python3 get_all_items.py
+
+The returned data should be similar to the following output: 
+
+<img width="959" alt="image" src="https://github.com/user-attachments/assets/28c2a9c0-6b6a-420f-926d-e41ae73b70a8" />
+
+Notice that Python returns the numeric data for the price_in_cents attribute as Decimal(number as string). This is not valid JSON, but that's OK for now. You address this issue in a future lab.
+You have a good start with this query, which returns all records. However, you want to try and search based on a attribute so that Frank and Martha could query for a specific product if they want to by using the product_name. You decide as a proof of concept to create a new script that returns a single product instead of returning all products.
+Update the get_one_item.py script. Replace the <FMI_1> with the name of the table's primary key.n the upper left, choose File > Save to save your changes.
+
+<img width="959" alt="image" src="https://github.com/user-attachments/assets/718ac402-f9d9-4044-989c-cd7778634272" />
+
+Review the code to understand what it does: Focus on lines 13 and 14, which define the response variable. The get_item operation requires a TableName and a Key. The Key parameter is used to compare the table's primary key, product_name, with the value that is passed in from the main module of the script. On line 24, note the value that's assigned to the product variable. Also observe that this value is passed to the get_one_item function.
+
+response = DDB.get_item(TableName='FoodProducts',
+  Key={
+   'product_name': {'S': product}
+   }
+  )
+data = response['Item']
+print (data)
+if __name__ == '__main__':
+  product = "chocolate cake"
+  get_one_item(product)
+
+  Note: The get_item operation is a higher level abstraction of the query operation. It is designed to return a single item. In the AWS Cloud9 terminal, run the following command: python3 get_one_item.py
+
+<img width="959" alt="image" src="https://github.com/user-attachments/assets/3b6c471b-c5fb-44a7-ba31-2b7a855b3c94" />
+
+You will notice that this is now in the DynamoDB object format (unlike the query you did before) and thus includes keys such as N and S. This is fine for now. You could parse that out and turn it into JSON that the website can understand using Lambda. However, this feature was only for a proof of concept.
+Sofía demonstrates the database features that she developed for the website to Frank, Martha, and the café staff. They are pleased that the website will soon be able to show all the live product information instead of the hard-coded version that they have currently.
+
+<h2>Task 7: Adding a global secondary index to the table</h2>
+
+Frank and Martha like the proof of concept that can now query the database for a specific product but return to Sofía with a request for a slightly more useful feature. The café staff originally thought that they would like to list all the products when the main page loads, but loading all 26 images would slow down the website.
+They considered a pagination feature, but with only 26 items, this option feels unnecessary. Instead, they have asked Sofia to expand on the proof of concept that searched based on a product name. This time, they need to search for items that are both part of the weekly special and also show that they are "on offer" in the tags attribute. This way when the website default page loads, it fetches only the featured menu items. You can also give the users the option to show all items when building the website. This option makes the website much more efficient. You make these website changes in a later lab to accommodate this new loading process.
+Sofía knows that searching on a primary key is easy as per her proof of concept. However, in order to search on attributes that are not part of a primary key, she needs to add a Global Secondary Index to the existing FoodProducts table.
+
+In this task, you continue as Sofía to implement this feature.
+Update the add_gsi.py script. Replace the <FMI_1> with the KeyType of HASH In the upper left, choose File > Save to save your changes.
+
+<img width="959" alt="image" src="https://github.com/user-attachments/assets/027e5f4c-b83f-4070-a91d-a1aa5f8e0c3e" />
+
+To understand what the add_gsi.py script does, open this script to review the code. Review the params variable on line 12. Focus on the GlobalSecondaryIndexUpdates parameter. Notice that a new index named special_GSI is created. This new index consists of one attribute: special. Similarly to the table creation, the line that defines the table variable also updates the table.
+
+ params = {
+        'TableName': 'FoodProducts',
+        'AttributeDefinitions': [
+            {'AttributeName': 'special', 'AttributeType': 'N'}
+        ],
+        'GlobalSecondaryIndexUpdates': [
+            {
+                'Create': {
+                    'IndexName': 'special_GSI',
+                    'KeySchema': [
+                        {
+                            'AttributeName': 'special',
+                            'KeyType': 'HASH'
+                        }
+                    ],
+                        'Projection': {
+                        'ProjectionType': 'ALL'
+                    },
+                        'ProvisionedThroughput': {
+                        'ReadCapacityUnits': 1,
+                        'WriteCapacityUnits': 1
+                    }
+                }
+            }
+        ]
+    }
+
+    table = DDB.update_table(**params)
+
+In the AWS Cloud9 terminal, run the following command: 
+python3 add_gsi.py
+
+<img width="958" alt="image" src="https://github.com/user-attachments/assets/367925f0-35ba-47d9-85ef-325106d205d7" />
+
+If the command completes successfully, the terminal output should display the message DONE.
+
+<img width="623" alt="image" src="https://github.com/user-attachments/assets/7ade720c-035e-4e60-8e97-66406c5c8a4c" />
+
+Note: It can take up to 5 minutes for the index to populate.
+In the DynamoDB console, monitor the status of the index:
+<ol>
+          <li>Choose Tables.</li>
+          <li>Choose FoodProducts.</li>
+          <li>Choose the Indexes tab.</li>
+          <li>Wait until the Status changes from Creating to Active.</li>
+</ol>
+
+
+
+<img width="959" alt="image" src="https://github.com/user-attachments/assets/819c07a4-d102-4b76-bf01-8e2c8f12de36" />
+
+Note: If you are using the new console, the Status column may become hidden a few minutes after the index creation and population has completed.
+The special_GSI index is a sparse index, meaning it does not have as many items as the main table. It is a subset of the data and is more efficient to scan when you want to find only the items that are part of the specials menu.
+Update the scan_with_filter.py script.
+
+<ol>
+      <li>Change <FMI_1> to special_GSI</li>
+      <li>Change <FMI_2> to tags </li>
+      <li>In the upper left, choose File > Save to save your changes.</li>
+</ol>
+
+<span>Review the code.</span>
+On line 18, including the IndexName option lets the scan operator know that it will be going to the index and not the main table to read the data. On line 19, the filter expression processes the records that have been read and shows only records that meet the comparison criteria. In this case, it shows records only if they don't have out of stock in the tags attribute. This ensures that only items that are available or "on offer" are shown to customers.
+
+response = table.scan(
+  IndexName='special_GSI',
+  FilterExpression=Not(Attr('tags').contains('out of stock')))
+
+Note: You may be familiar with the older DynamoDB parameter, ScanFilter. This is a legacy parameter. FilterExpression should be used instead. 
+FilterExpression does not include all of the operators that were provided with ScanFilter, for example NOT_CONTAINS. This is why you wrapped the comparison inside the Not() function.
+Save the file and run it. 
+
+python3 scan_with_filter.py
+
+The output the following: 
+
+<img width="953" alt="image" src="https://github.com/user-attachments/assets/74aa8e5d-dc6e-4550-90ff-f328add7edfd" />
+
+Again, the response is not in the format the website requires. However, when you use this code in a Lambda function in a later lab, you will adjust then.
+
+<h2>Update from the café</h2>
+Sofía is happy with the progress that she has made. The database table is loaded with data, she addressed the café's database backend requirements, and she will soon wire this into the website. 
+Sofía's next task is to create an API that the website can use.
+Sofía decides to stop for the day, but she's looking forward to her next task. She plans to start working on creating a mock API that she can use for testing.
+
+<h2>Lab complete</h2>
+
+© 2024 Amazon Web Services, Inc. and its affiliates. All rights reserved. This work may not be reproduced or redistributed, in whole or in part, without prior written permission from Amazon Web Services, Inc. Commercial copying, lending, or selling is prohibited.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
